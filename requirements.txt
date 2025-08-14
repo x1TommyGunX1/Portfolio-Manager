@@ -5,3 +5,4 @@ plotly
 vaderSentiment
 requests
 statistics
+streamlit-autorefresh
