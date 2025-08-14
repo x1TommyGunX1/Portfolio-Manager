@@ -12,17 +12,15 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import requests
 import json
 import os
+import hashlib
 
 # File paths
 CSV_FILE = 'portfolio_export.csv'
 ERROR_LOG = 'portfolio_errors.log'
-PORTFOLIO_JSON = 'portfolio.json'
-WATCHLIST_JSON = 'watchlist.json'
-SETTINGS_JSON = 'settings.json'
-RECOMMENDATIONS_JSON = 'recommendations.json'
+USERS_JSON = 'users.json'
 
 # Finnhub API key
-FINNHUB_API_KEY = 'd25rhs9r01qhge4e2bjgd25rhs9r01qhge4e2bk0'
+FINNHUB_API_KEY = os.getenv('FINNHUB_API_KEY', 'd25rhs9r01qhge4e2bjgd25rhs9r01qhge4e2bk0')
 
 # Set up error logging
 logging.basicConfig(filename=ERROR_LOG, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,102 +35,149 @@ DEFAULT_SETTINGS = {
     'auto_refresh': True,
 }
 
-def init_json_files():
-    """Initialize JSON files if they don't exist."""
+def init_json_files(username):
+    """Initialize JSON files for a user if they don't exist."""
     try:
-        if not os.path.exists(PORTFOLIO_JSON):
-            with open(PORTFOLIO_JSON, 'w') as f:
+        portfolio_file = f'portfolio_{username}.json'
+        watchlist_file = f'watchlist_{username}.json'
+        settings_file = f'settings_{username}.json'
+        recommendations_file = f'recommendations_{username}.json'
+        
+        if not os.path.exists(portfolio_file):
+            with open(portfolio_file, 'w') as f:
                 json.dump({}, f)
-        if not os.path.exists(WATCHLIST_JSON):
-            with open(WATCHLIST_JSON, 'w') as f:
+        if not os.path.exists(watchlist_file):
+            with open(watchlist_file, 'w') as f:
                 json.dump([], f)
-        if not os.path.exists(SETTINGS_JSON):
-            with open(SETTINGS_JSON, 'w') as f:
+        if not os.path.exists(settings_file):
+            with open(settings_file, 'w') as f:
                 json.dump(DEFAULT_SETTINGS, f)
-        if not os.path.exists(RECOMMENDATIONS_JSON):
-            with open(RECOMMENDATIONS_JSON, 'w') as f:
+        if not os.path.exists(recommendations_file):
+            with open(recommendations_file, 'w') as f:
                 json.dump([], f)
+        if not os.path.exists(USERS_JSON):
+            with open(USERS_JSON, 'w') as f:
+                json.dump({}, f)
     except Exception as e:
-        logging.error(f"Error initializing JSON files: {e}")
+        logging.error(f"Error initializing JSON files for {username}: {e}")
 
-def load_settings():
+def load_users():
+    """Load user credentials from JSON."""
+    try:
+        if os.path.exists(USERS_JSON):
+            with open(USERS_JSON, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        logging.error(f"Error loading users: {e}")
+        return {}
+
+def save_users(users):
+    """Save user credentials to JSON."""
+    try:
+        with open(USERS_JSON, 'w') as f:
+            json.dump(users, f)
+    except Exception as e:
+        logging.error(f"Error saving users: {e}")
+
+def hash_password(password):
+    """Hash a password for secure storage."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def authenticate_user(username, password):
+    """Authenticate a user."""
+    users = load_users()
+    if username in users and users[username] == hash_password(password):
+        return True
+    return False
+
+def register_user(username, password):
+    """Register a new user."""
+    users = load_users()
+    if username in users:
+        return False, "Username already exists."
+    users[username] = hash_password(password)
+    save_users(users)
+    init_json_files(username)
+    return True, "Registration successful."
+
+def load_settings(username):
     """Load settings from JSON."""
     try:
-        init_json_files()
-        with open(SETTINGS_JSON, 'r') as f:
+        init_json_files(username)
+        with open(f'settings_{username}.json', 'r') as f:
             settings = json.load(f)
         return {**DEFAULT_SETTINGS, **settings}
     except Exception as e:
-        logging.error(f"Error loading settings: {e}")
+        logging.error(f"Error loading settings for {username}: {e}")
         return DEFAULT_SETTINGS
 
-def save_settings(settings):
+def save_settings(username, settings):
     """Save settings to JSON."""
     try:
-        init_json_files()
-        with open(SETTINGS_JSON, 'w') as f:
+        init_json_files(username)
+        with open(f'settings_{username}.json', 'w') as f:
             json.dump(settings, f)
     except Exception as e:
-        logging.error(f"Error saving settings: {e}")
+        logging.error(f"Error saving settings for {username}: {e}")
 
-def load_portfolio():
+def load_portfolio(username):
     """Load the portfolio from JSON."""
     try:
-        init_json_files()
-        with open(PORTFOLIO_JSON, 'r') as f:
+        init_json_files(username)
+        with open(f'portfolio_{username}.json', 'r') as f:
             portfolio = json.load(f)
-        # Ensure buy_date exists for all purchases
         for ticker, purchases in portfolio.items():
             for p in purchases:
                 p['buy_date'] = p.get('buy_date', None)
         return portfolio
     except Exception as e:
-        logging.error(f"Error loading portfolio: {e}")
+        logging.error(f"Error loading portfolio for {username}: {e}")
         return {}
 
-def save_portfolio(portfolio):
+def save_portfolio(username, portfolio):
     """Save the portfolio to JSON."""
     try:
-        init_json_files()
-        with open(PORTFOLIO_JSON, 'w') as f:
+        init_json_files(username)
+        with open(f'portfolio_{username}.json', 'w') as f:
             json.dump(portfolio, f)
     except Exception as e:
-        logging.error(f"Error saving portfolio: {e}")
+        logging.error(f"Error saving portfolio for {username}: {e}")
 
-def load_watchlist():
+def load_watchlist(username):
     """Load the watchlist from JSON."""
     try:
-        init_json_files()
-        with open(WATCHLIST_JSON, 'r') as f:
+        init_json_files(username)
+        with open(f'watchlist_{username}.json', 'r') as f:
             watchlist = json.load(f)
         return watchlist
     except Exception as e:
-        logging.error(f"Error loading watchlist: {e}")
+        logging.error(f"Error loading watchlist for {username}: {e}")
         return []
 
-def save_watchlist(watchlist):
+def save_watchlist(username, watchlist):
     """Save the watchlist to JSON."""
     try:
-        init_json_files()
-        with open(WATCHLIST_JSON, 'w') as f:
+        init_json_files(username)
+        with open(f'watchlist_{username}.json', 'w') as f:
             json.dump(watchlist, f)
     except Exception as e:
-        logging.error(f"Error saving watchlist: {e}")
+        logging.error(f"Error saving watchlist for {username}: {e}")
 
-def save_recommendations(recommendations):
+def save_recommendations(username, recommendations):
     """Save recommendations to JSON."""
     try:
-        init_json_files()
+        init_json_files(username)
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         rec_list = []
         for ticker, recs in recommendations.items():
             for rec in recs:
                 full_rec = f"{ticker}: {rec}"
                 rec_list.append({"ticker": ticker, "recommendation": full_rec, "timestamp": timestamp})
-        with open(RECOMMENDATIONS_JSON, 'w') as f:
+        with open(f'recommendations_{username}.json', 'w') as f:
             json.dump(rec_list, f)
     except Exception as e:
-        logging.error(f"Error saving recommendations: {e}")
+        logging.error(f"Error saving recommendations for {username}: {e}")
 
 def fetch_finnhub_news(ticker, api_key, retries=3, backoff=3):
     """Fetch news from Finnhub API with VADER sentiment analysis."""
@@ -235,14 +280,15 @@ def fetch_news_with_retries(ticker, retries=3, backoff=3):
     """Fetch news, preferring Finnhub, falling back to yfinance."""
     if 'news_cache' not in st.session_state:
         st.session_state.news_cache = {}
-    if ticker in st.session_state.news_cache and time.time() - st.session_state.news_cache[ticker]['timestamp'] < 3600:
-        return st.session_state.news_cache[ticker]['news']
+    cache_key = f"{st.session_state.username}_{ticker}"
+    if cache_key in st.session_state.news_cache and time.time() - st.session_state.news_cache[cache_key]['timestamp'] < 3600:
+        return st.session_state.news_cache[cache_key]['news']
     news = fetch_finnhub_news(ticker, FINNHUB_API_KEY, retries, backoff)
     if news and not any("ERROR" in item['title'] or "No news available" in item['title'] for item in news):
-        st.session_state.news_cache[ticker] = {'news': news, 'timestamp': time.time()}
+        st.session_state.news_cache[cache_key] = {'news': news, 'timestamp': time.time()}
         return news
     news = fetch_yfinance_news(ticker, retries, backoff)
-    st.session_state.news_cache[ticker] = {'news': news, 'timestamp': time.time()}
+    st.session_state.news_cache[cache_key] = {'news': news, 'timestamp': time.time()}
     return news
 
 def calculate_rsi(prices, period=14):
@@ -258,10 +304,10 @@ def calculate_rsi(prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def generate_recommendations(portfolio, watchlist):
+def generate_recommendations(username, portfolio, watchlist):
     """Generate enhanced AI-driven recommendations."""
     try:
-        logging.debug("Generating recommendations")
+        logging.debug(f"Generating recommendations for {username}")
         recommendations = {}
         total_value = 0
         ticker_values = {}
@@ -415,10 +461,10 @@ def generate_recommendations(portfolio, watchlist):
                 logging.error(f"Error analyzing watchlist {ticker} for recommendations: {e}")
 
         # Save recommendations
-        save_recommendations(recommendations)
+        save_recommendations(username, recommendations)
         return recommendations
     except Exception as e:
-        logging.error(f"Error generating recommendations: {e}")
+        logging.error(f"Error generating recommendations for {username}: {e}")
         return {}
 
 def fetch_historical_portfolio_value(portfolio, period='1y'):
@@ -429,17 +475,17 @@ def fetch_historical_portfolio_value(portfolio, period='1y'):
             logging.info("Empty portfolio, returning empty DataFrame")
             return pd.DataFrame()
 
-        all_dates = pd.date_range(end=datetime.date.today(), periods=365, freq='D')  # Assume 1 year
+        all_dates = pd.date_range(end=datetime.date.today(), periods=365, freq='D')
         df = pd.DataFrame(index=all_dates)
         df.index.name = 'Date'
-        df = df.sort_index()  # Ensure ascending
+        df = df.sort_index()
         for ticker, purchases in portfolio.items():
             try:
                 stock = yf.Ticker(ticker)
                 history = stock.history(period=period)['Close']
                 if history.empty:
                     continue
-                history = history.tz_localize(None)  # Remove timezone
+                history = history.tz_localize(None)
                 history = history.reindex(df.index, method='ffill')
                 total_shares = sum(p['shares'] for p in purchases)
                 df[ticker] = history * total_shares
@@ -460,19 +506,19 @@ def fetch_historical_portfolio_value(portfolio, period='1y'):
         logging.error(f"Critical error in fetch_historical_portfolio_value: {e}")
         return pd.DataFrame()
 
-def fetch_data(portfolio, watchlist, alert_threshold):
+def fetch_data(username, portfolio, watchlist, alert_threshold):
     """Fetch data for portfolio and watchlist with enhanced error handling."""
     try:
         all_tickers = list(portfolio.keys()) + watchlist
         if not all_tickers:
-            logging.info("No tickers in portfolio or watchlist.")
+            logging.info(f"No tickers in portfolio or watchlist for {username}.")
             return {}, {}, [], []
 
         portfolio_data = {}
         watchlist_data = {}
         news_items = []
         alerts = []
-        data_cache = {}  # Local cache for this fetch
+        data_cache = {}
 
         for ticker in all_tickers:
             try:
@@ -584,82 +630,123 @@ def fetch_data(portfolio, watchlist, alert_threshold):
         
         return portfolio_data, watchlist_data, news_items, alerts
     except Exception as e:
-        logging.error(f"Critical error in fetch_data: {e}")
+        logging.error(f"Critical error in fetch_data for {username}: {e}")
         return {}, {}, [], []
 
 def main():
     st.set_page_config(page_title="Portfolio Manager", layout="wide")
-    st.title("📈 Portfolio Manager")
 
-    # Initialize JSON files
-    init_json_files()
+    # Initialize session state for authentication
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
+    # Authentication UI
+    if not st.session_state.authenticated:
+        st.title("📈 Portfolio Manager - Login")
+        auth_option = st.selectbox("Choose an option", ["Login", "Register"])
+        
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if auth_option == "Login":
+            if st.button("Login"):
+                if authenticate_user(username, password):
+                    st.session_state.username = username
+                    st.session_state.authenticated = True
+                    init_json_files(username)
+                    st.success(f"Logged in as {username}")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+        else:
+            if st.button("Register"):
+                success, message = register_user(username, password)
+                if success:
+                    st.session_state.username = username
+                    st.session_state.authenticated = True
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+        return
+
+    # Main app for authenticated users
+    username = st.session_state.username
+    st.title(f"📈 Portfolio Manager - {username}")
 
     # Load settings and state
-    settings = load_settings()
-    portfolio = load_portfolio()
-    watchlist = load_watchlist()
+    settings = load_settings(username)
+    portfolio = load_portfolio(username)
+    watchlist = load_watchlist(username)
 
     # Initialize session state
-    if 'next_refresh' not in st.session_state:
-        st.session_state.next_refresh = time.time() + settings['refresh_interval']
-    if 'alert_threshold' not in st.session_state:
-        st.session_state.alert_threshold = settings.get('alert_threshold', 5.0)
-    if 'portfolio_visible_columns' not in st.session_state:
-        st.session_state.portfolio_visible_columns = settings['portfolio_visible_columns']
-    if 'watchlist_visible_columns' not in st.session_state:
-        st.session_state.watchlist_visible_columns = settings['watchlist_visible_columns']
-    if 'auto_refresh' not in st.session_state:
-        st.session_state.auto_refresh = settings['auto_refresh']
-    if 'refresh_key' not in st.session_state:
-        st.session_state.refresh_key = 0
-    if 'news_cache' not in st.session_state:
-        st.session_state.news_cache = {}
-    if 'recommendations_cache' not in st.session_state:
-        st.session_state.recommendations_cache = {'recommendations': {}, 'timestamp': 0}
-    if 'pie_colors' not in st.session_state:
-        st.session_state.pie_colors = {}
+    if f'next_refresh_{username}' not in st.session_state:
+        st.session_state[f'next_refresh_{username}'] = time.time() + settings['refresh_interval']
+    if f'alert_threshold_{username}' not in st.session_state:
+        st.session_state[f'alert_threshold_{username}'] = settings.get('alert_threshold', 5.0)
+    if f'portfolio_visible_columns_{username}' not in st.session_state:
+        st.session_state[f'portfolio_visible_columns_{username}'] = settings['portfolio_visible_columns']
+    if f'watchlist_visible_columns_{username}' not in st.session_state:
+        st.session_state[f'watchlist_visible_columns_{username}'] = settings['watchlist_visible_columns']
+    if f'auto_refresh_{username}' not in st.session_state:
+        st.session_state[f'auto_refresh_{username}'] = settings['auto_refresh']
+    if f'refresh_key_{username}' not in st.session_state:
+        st.session_state[f'refresh_key_{username}'] = 0
+    if f'news_cache_{username}' not in st.session_state:
+        st.session_state[f'news_cache_{username}'] = {}
+    if f'recommendations_cache_{username}' not in st.session_state:
+        st.session_state[f'recommendations_cache_{username}'] = {'recommendations': {}, 'timestamp': 0}
+    if f'pie_colors_{username}' not in st.session_state:
+        st.session_state[f'pie_colors_{username}'] = {}
 
     # Auto-refresh
-    if st.session_state.auto_refresh:
-        refresh_interval = settings['refresh_interval'] * 1000  # Convert to milliseconds
-        st_autorefresh(interval=refresh_interval, key="auto_refresh")
+    if st.session_state[f'auto_refresh_{username}']:
+        refresh_interval = settings['refresh_interval'] * 1000
+        st_autorefresh(interval=refresh_interval, key=f"auto_refresh_{username}")
 
-    # Sidebar for settings
+    # Sidebar for settings and logout
     with st.sidebar:
         st.header("⚙️ Settings")
-        st.checkbox("Enable Auto-Refresh", value=st.session_state.auto_refresh, key="auto_refresh_toggle",
-                    on_change=lambda: st.session_state.update(auto_refresh=not st.session_state.auto_refresh))
-        new_refresh_interval = st.number_input("Refresh Interval (seconds)", min_value=10, value=settings['refresh_interval'], step=10, key="refresh_interval")
-        if st.button("Update Refresh", key="update_refresh"):
+        if st.button("Logout"):
+            st.session_state.authenticated = False
+            st.session_state.username = None
+            st.rerun()
+        
+        st.checkbox("Enable Auto-Refresh", value=st.session_state[f'auto_refresh_{username}'], key=f"auto_refresh_toggle_{username}",
+                    on_change=lambda: st.session_state.update({f'auto_refresh_{username}': not st.session_state[f'auto_refresh_{username}']}))
+        new_refresh_interval = st.number_input("Refresh Interval (seconds)", min_value=10, value=settings['refresh_interval'], step=10, key=f"refresh_interval_{username}")
+        if st.button("Update Refresh", key=f"update_refresh_{username}"):
             settings['refresh_interval'] = new_refresh_interval
-            save_settings(settings)
-            st.session_state.next_refresh = time.time() + new_refresh_interval
+            save_settings(username, settings)
+            st.session_state[f'next_refresh_{username}'] = time.time() + new_refresh_interval
             st.success(f"Refresh interval set to {new_refresh_interval} seconds.")
             st.rerun()
 
-        new_alert_threshold = st.number_input("Alert Drop Threshold (%)", min_value=0.0, value=settings['alert_threshold'], step=0.1, key="alert_threshold")
-        if st.button("Update Alert", key="update_alert"):
+        new_alert_threshold = st.number_input("Alert Drop Threshold (%)", min_value=0.0, value=settings['alert_threshold'], step=0.1, key=f"alert_threshold_{username}")
+        if st.button("Update Alert", key=f"update_alert_{username}"):
             settings['alert_threshold'] = new_alert_threshold
-            save_settings(settings)
-            st.session_state.alert_threshold = new_alert_threshold
+            save_settings(username, settings)
+            st.session_state[f'alert_threshold_{username}'] = new_alert_threshold
             st.success(f"Alert threshold set to {new_alert_threshold}%.")
 
         st.subheader("Portfolio Columns")
         portfolio_cols = ['Ticker', 'Shares', 'Avg Buy Price', 'Current Price', 'Value', 'P/L']
-        selected_portfolio_cols = [col for col in portfolio_cols if st.checkbox(col, value=col in st.session_state.portfolio_visible_columns, key=f"pf_{col}")]
-        if st.button("Apply Portfolio Columns", key="apply_portfolio_cols"):
-            st.session_state.portfolio_visible_columns = selected_portfolio_cols
+        selected_portfolio_cols = [col for col in portfolio_cols if st.checkbox(col, value=col in st.session_state[f'portfolio_visible_columns_{username}'], key=f"pf_{col}_{username}")]
+        if st.button("Apply Portfolio Columns", key=f"apply_portfolio_cols_{username}"):
+            st.session_state[f'portfolio_visible_columns_{username}'] = selected_portfolio_cols
             settings['portfolio_visible_columns'] = selected_portfolio_cols
-            save_settings(settings)
+            save_settings(username, settings)
             st.rerun()
 
         st.subheader("Watchlist Columns")
         watchlist_cols = ['Ticker', 'Current Price', 'Daily Change']
-        selected_watchlist_cols = [col for col in watchlist_cols if st.checkbox(col, value=col in st.session_state.watchlist_visible_columns, key=f"wf_{col}")]
-        if st.button("Apply Watchlist Columns", key="apply_watchlist_cols"):
-            st.session_state.watchlist_visible_columns = selected_watchlist_cols
+        selected_watchlist_cols = [col for col in watchlist_cols if st.checkbox(col, value=col in st.session_state[f'watchlist_visible_columns_{username}'], key=f"wf_{col}_{username}")]
+        if st.button("Apply Watchlist Columns", key=f"apply_watchlist_cols_{username}"):
+            st.session_state[f'watchlist_visible_columns_{username}'] = selected_watchlist_cols
             settings['watchlist_visible_columns'] = selected_watchlist_cols
-            save_settings(settings)
+            save_settings(username, settings)
             st.rerun()
 
         st.subheader("Pie Chart Colors")
@@ -667,7 +754,7 @@ def main():
         color_palette = px.colors.qualitative.Plotly
         for i, ticker in enumerate(tickers):
             default_color = color_palette[i % len(color_palette)]
-            st.session_state.pie_colors[ticker] = st.color_picker(f"Color for {ticker}", st.session_state.pie_colors.get(ticker, default_color))
+            st.session_state[f'pie_colors_{username}'][ticker] = st.color_picker(f"Color for {ticker}", st.session_state[f'pie_colors_{username}'].get(ticker, default_color), key=f"color_{ticker}_{username}")
 
     # Input section
     st.header("➕ Manage Portfolio and Watchlist")
@@ -676,11 +763,11 @@ def main():
 
         with col1:
             st.subheader("Add Purchase")
-            ticker = st.text_input("Ticker", key="add_ticker")
-            shares = st.number_input("Shares", min_value=0.0, step=0.01, key="add_shares")
-            buy_price = st.number_input("Buy Price (optional)", min_value=0.0, step=0.01, value=0.0, key="add_buy_price")
-            buy_date = st.date_input("Buy Date (optional)", value=datetime.date.today(), key="add_buy_date")
-            if st.button("Add Purchase", key="add_purchase"):
+            ticker = st.text_input("Ticker", key=f"add_ticker_{username}")
+            shares = st.number_input("Shares", min_value=0.0, step=0.01, key=f"add_shares_{username}")
+            buy_price = st.number_input("Buy Price (optional)", min_value=0.0, step=0.01, value=0.0, key=f"add_buy_price_{username}")
+            buy_date = st.date_input("Buy Date (optional)", value=datetime.date.today(), key=f"add_buy_date_{username}")
+            if st.button("Add Purchase", key=f"add_purchase_{username}"):
                 try:
                     if not ticker:
                         st.error("Ticker cannot be empty.")
@@ -698,19 +785,19 @@ def main():
                             if ticker not in portfolio:
                                 portfolio[ticker] = []
                             portfolio[ticker].append({'shares': shares, 'buy_price': buy_price, 'buy_date': buy_date_str})
-                            save_portfolio(portfolio)
+                            save_portfolio(username, portfolio)
                             st.success(f"Added purchase for {ticker} to portfolio.")
                             st.rerun()
                 except ValueError as e:
                     st.error(f"Invalid input: {e}")
                 except Exception as e:
                     st.error(f"Unexpected error: {e}")
-                    logging.error(f"Unexpected error adding stock {ticker}: {e}")
+                    logging.error(f"Unexpected error adding stock {ticker} for {username}: {e}")
 
         with col2:
             st.subheader("Add to Watchlist")
-            watchlist_ticker = st.text_input("Ticker", key="watchlist_ticker")
-            if st.button("Add to Watchlist", key="add_watchlist"):
+            watchlist_ticker = st.text_input("Ticker", key=f"watchlist_ticker_{username}")
+            if st.button("Add to Watchlist", key=f"add_watchlist_{username}"):
                 try:
                     if not watchlist_ticker:
                         st.error("Ticker cannot be empty.")
@@ -724,22 +811,22 @@ def main():
                             st.error(f"Ticker '{ticker}' not found or no data available.")
                         else:
                             watchlist.append(ticker)
-                            save_watchlist(watchlist)
+                            save_watchlist(username, watchlist)
                             st.success(f"Added {ticker} to watchlist.")
                             st.rerun()
                 except Exception as e:
                     st.error(f"Error adding to watchlist: {e}")
-                    logging.error(f"Error adding {ticker} to watchlist: {e}")
+                    logging.error(f"Error adding {ticker} to watchlist for {username}: {e}")
 
         with col3:
             st.subheader("Remove Purchase")
             ticker_options = list(portfolio.keys()) if portfolio else ["No tickers"]
-            selected_ticker = st.selectbox("Select Ticker", ticker_options, key="remove_ticker")
+            selected_ticker = st.selectbox("Select Ticker", ticker_options, key=f"remove_ticker_{username}")
             if selected_ticker and selected_ticker != "No tickers":
                 purchases = portfolio.get(selected_ticker, [])
                 purchase_options = [f"Shares: {p['shares']:.2f}, Buy Price: {'N/A' if p['buy_price'] is None else f'${p['buy_price']:.2f}'}, Buy Date: {p.get('buy_date', 'N/A')}" for p in purchases]
-                selected_purchase = st.selectbox("Select Purchase", purchase_options, key="remove_purchase")
-                if st.button("Remove Purchase", key="remove_purchase_btn"):
+                selected_purchase = st.selectbox("Select Purchase", purchase_options, key=f"remove_purchase_{username}")
+                if st.button("Remove Purchase", key=f"remove_purchase_btn_{username}"):
                     try:
                         if not selected_ticker or selected_ticker == "No tickers":
                             st.error("Please select a ticker.")
@@ -750,39 +837,39 @@ def main():
                             removed = purchases.pop(index)
                             if not purchases:
                                 del portfolio[selected_ticker]
-                            save_portfolio(portfolio)
+                            save_portfolio(username, portfolio)
                             buy_price_str = f"${removed['buy_price']:.2f}" if removed['buy_price'] is not None else "N/A"
                             buy_date_str = removed.get('buy_date', 'N/A')
                             st.success(f"Removed purchase: Shares: {removed['shares']:.2f}, Buy Price: {buy_price_str}, Buy Date: {buy_date_str} for {selected_ticker}.")
                             st.rerun()
                     except Exception as e:
                         st.error(f"Error removing purchase: {e}")
-                        logging.error(f"Error removing purchase for {selected_ticker}: {e}")
+                        logging.error(f"Error removing purchase for {selected_ticker} by {username}: {e}")
 
         with col4:
             st.subheader("Remove from Watchlist")
             ticker_options = watchlist if watchlist else ["No tickers"]
-            watchlist_ticker = st.selectbox("Select Ticker", ticker_options, key="remove_watchlist_ticker")
-            if st.button("Remove from Watchlist", key="remove_watchlist"):
+            watchlist_ticker = st.selectbox("Select Ticker", ticker_options, key=f"remove_watchlist_ticker_{username}")
+            if st.button("Remove from Watchlist", key=f"remove_watchlist_{username}"):
                 try:
                     if not watchlist_ticker or watchlist_ticker == "No tickers":
                         st.error("Please select a ticker.")
                     elif watchlist_ticker in watchlist:
                         watchlist.remove(watchlist_ticker)
-                        save_watchlist(watchlist)
+                        save_watchlist(username, watchlist)
                         st.success(f"Removed {watchlist_ticker} from watchlist.")
                         st.rerun()
                     else:
                         st.error(f"{watchlist_ticker} not in watchlist.")
                 except Exception as e:
                     st.error(f"Error removing from watchlist: {e}")
-                    logging.error(f"Error removing {watchlist_ticker} from watchlist: {e}")
+                    logging.error(f"Error removing {watchlist_ticker} from watchlist for {username}: {e}")
 
     # Export/Import CSV
     st.header("📁 Export/Import Portfolio (CSV)")
     col_export, col_import = st.columns(2)
     with col_export:
-        if st.button("Export to CSV", key="export_csv"):
+        if st.button("Export to CSV", key=f"export_csv_{username}"):
             try:
                 with open(CSV_FILE, 'w', newline='') as f:
                     writer = csv.writer(f)
@@ -795,11 +882,11 @@ def main():
                 st.success(f"Portfolio exported to {CSV_FILE}.")
             except Exception as e:
                 st.error(f"Error exporting to CSV: {e}")
-                logging.error(f"Error exporting to CSV: {e}")
+                logging.error(f"Error exporting to CSV for {username}: {e}")
 
     with col_import:
-        uploaded_file = st.file_uploader("Import from CSV", type=['csv'], key="csv_uploader")
-        if uploaded_file and st.button("Import CSV", key="import_csv"):
+        uploaded_file = st.file_uploader("Import from CSV", type=['csv'], key=f"csv_uploader_{username}")
+        if uploaded_file and st.button("Import CSV", key=f"import_csv_{username}"):
             try:
                 df = pd.read_csv(uploaded_file)
                 expected_header = ['Ticker', 'Shares', 'Buy Price', 'Buy Date']
@@ -841,20 +928,20 @@ def main():
                             continue
                         except Exception as e:
                             st.error(f"WARNING: Skipping {ticker}: {e}")
-                            logging.error(f"Error importing {ticker} from CSV: {e}")
+                            logging.error(f"Error importing {ticker} from CSV for {username}: {e}")
                     
-                    save_portfolio(portfolio)
+                    save_portfolio(username, portfolio)
                     st.success(f"Portfolio imported from CSV.")
                     st.rerun()
             except Exception as e:
                 st.error(f"Error importing from CSV: {e}")
-                logging.error(f"Error importing from CSV: {e}")
+                logging.error(f"Error importing from CSV for {username}: {e}")
 
     # Export/Import All as JSON
     st.header("📁 Export/Import All Data (JSON)")
     col_export_json, col_import_json = st.columns(2)
     with col_export_json:
-        if st.button("Export All to JSON", key="export_json"):
+        if st.button("Export All to JSON", key=f"export_json_{username}"):
             try:
                 all_data = {
                     "portfolio": portfolio,
@@ -862,45 +949,42 @@ def main():
                     "settings": settings,
                 }
                 json_str = json.dumps(all_data)
-                st.download_button("Download JSON", json_str, file_name="portfolio_all.json", mime="application/json")
+                st.download_button("Download JSON", json_str, file_name=f"portfolio_all_{username}.json", mime="application/json", key=f"download_json_{username}")
                 st.success("Exported all data to JSON.")
             except Exception as e:
                 st.error(f"Error exporting JSON: {e}")
-                logging.error(f"Error exporting JSON: {e}")
+                logging.error(f"Error exporting JSON for {username}: {e}")
 
     with col_import_json:
-        uploaded_json = st.file_uploader("Import All from JSON", type=['json'], key="json_uploader")
-        if uploaded_json and st.button("Import JSON", key="import_json"):
+        uploaded_json = st.file_uploader("Import All from JSON", type=['json'], key=f"json_uploader_{username}")
+        if uploaded_json and st.button("Import JSON", key=f"import_json_{username}"):
             try:
                 all_data = json.load(uploaded_json)
                 portfolio = all_data.get("portfolio", {})
                 watchlist = all_data.get("watchlist", [])
                 settings = all_data.get("settings", DEFAULT_SETTINGS)
-                # Ensure buy_date exists in imported portfolio
                 for ticker, purchases in portfolio.items():
                     for p in purchases:
                         p['buy_date'] = p.get('buy_date', None)
-                save_portfolio(portfolio)
-                save_watchlist(watchlist)
-                save_settings(settings)
+                save_portfolio(username, portfolio)
+                save_watchlist(username, watchlist)
+                save_settings(username, settings)
                 st.success("Imported all data from JSON.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error importing JSON: {e}")
-                logging.error(f"Error importing JSON: {e}")
+                logging.error(f"Error importing JSON for {username}: {e}")
 
     # Portfolio and Watchlist Display
     st.header("📊 Portfolio and Watchlist")
-    portfolio_data, watchlist_data, news_items, alerts = fetch_data(portfolio, watchlist, st.session_state.alert_threshold)
+    portfolio_data, watchlist_data, news_items, alerts = fetch_data(username, portfolio, watchlist, st.session_state[f'alert_threshold_{username}'])
 
-    # Style positive and negative values
     def style_values(val):
         try:
             if isinstance(val, str) and val != 'N/A':
-                # Handle strings with dollar signs or percentages
                 num_str = val.replace('$', '').replace('%', '')
                 if '(' in num_str:
-                    num_str = num_str.split('(')[0].strip()  # Extract number before percentage
+                    num_str = num_str.split('(')[0].strip()
                 num = float(num_str)
                 return 'color: green' if num > 0 else 'color: red' if num < 0 else ''
             return ''
@@ -923,8 +1007,7 @@ def main():
                     'P/L': f"${data['total_pl']:.2f}" if data['total_pl'] != 'N/A' else 'N/A'
                 })
             df = pd.DataFrame(df_data)
-            columns = [col for col in st.session_state.portfolio_visible_columns if col in df.columns]
-            # Apply styling only to P/L
+            columns = [col for col in st.session_state[f'portfolio_visible_columns_{username}'] if col in df.columns]
             styled_df = df[columns].style.applymap(style_values, subset=['P/L'])
             st.dataframe(styled_df, use_container_width=True, height=300)
         else:
@@ -941,14 +1024,13 @@ def main():
                     'Daily Change': f"${data['daily_change']:.2f} ({data['daily_change_pct']:.2f}%)" if data['current_price'] != 'N/A' else 'N/A'
                 })
             df = pd.DataFrame(df_data)
-            columns = [col for col in st.session_state.watchlist_visible_columns if col in df.columns]
-            # Apply styling only to Daily Change
+            columns = [col for col in st.session_state[f'watchlist_visible_columns_{username}'] if col in df.columns]
             styled_df = df[columns].style.applymap(style_values, subset=['Daily Change'])
             st.dataframe(styled_df, use_container_width=True, height=300)
         else:
             st.info("No watchlist data available.")
 
-    # Portfolio Summary with red/green styling
+    # Portfolio Summary
     st.header("💹 Portfolio Summary")
     total_value_all = sum(data['total_value'] for data in portfolio_data.values() if data['total_value'] != 'N/A')
     total_invested_all = sum(data['total_invested'] for data in portfolio_data.values())
@@ -973,7 +1055,7 @@ def main():
     # Market open/close countdown
     st.header("🕒 Market Status")
     market_status = st.empty()
-    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))  # EDT
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-4)))
     market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
     market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
     
@@ -1003,7 +1085,7 @@ def main():
         df_pie = pd.DataFrame({'Ticker': labels, 'Value': sizes})
         fig = px.pie(df_pie, values='Value', names='Ticker', title='Portfolio Allocation',
                      template='plotly_dark', hole=0.3)
-        colors_list = [st.session_state.pie_colors.get(label, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, label in enumerate(labels)]
+        colors_list = [st.session_state[f'pie_colors_{username}'].get(label, px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]) for i, label in enumerate(labels)]
         fig.update_traces(marker=dict(colors=colors_list), textposition='inside', textinfo='percent+label')
         fig.update_layout(
             font=dict(size=12),
@@ -1026,11 +1108,11 @@ def main():
 
     # News and Recommendations
     st.header("📰 News & Recommendations")
-    if time.time() - st.session_state.recommendations_cache['timestamp'] > 3600:
-        recommendations = generate_recommendations(portfolio, watchlist)
-        st.session_state.recommendations_cache = {'recommendations': recommendations, 'timestamp': time.time()}
+    if time.time() - st.session_state[f'recommendations_cache_{username}']['timestamp'] > 3600:
+        recommendations = generate_recommendations(username, portfolio, watchlist)
+        st.session_state[f'recommendations_cache_{username}'] = {'recommendations': recommendations, 'timestamp': time.time()}
     else:
-        recommendations = st.session_state.recommendations_cache['recommendations']
+        recommendations = st.session_state[f'recommendations_cache_{username}']['recommendations']
     
     all_tickers = set(portfolio.keys()) | set(watchlist)
     for ticker in sorted(all_tickers):
@@ -1052,7 +1134,6 @@ def main():
                             """,
                             unsafe_allow_html=True
                         )
-                    # Overall sentiment
                     avg_compound = sum(item['compound'] for item in news_for_ticker if 'compound' in item) / len(news_for_ticker) if news_for_ticker else 0
                     overall_sentiment = "Positive" if avg_compound > 0.05 else "Negative" if avg_compound < -0.05 else "Neutral"
                     overall_color = 'green' if overall_sentiment == 'Positive' else 'red' if overall_sentiment == 'Negative' else 'grey'
@@ -1075,18 +1156,18 @@ def main():
                             color = "white"
                         st.markdown(f"<span style='color: {color};'>- {rec}</span>", unsafe_allow_html=True)
 
-    # Alerts with red styling
+    # Alerts
     if alerts:
         alert_text = "<br>".join([f'<span style="color: red">{alert}</span>' for alert in alerts])
         st.markdown(f"🚨 **Portfolio Alerts**:<br>{alert_text}", unsafe_allow_html=True)
 
-    # Display refresh countdown
+    # Refresh countdown
     refresh_placeholder = st.empty()
-    seconds_left = max(0, int(st.session_state.next_refresh - time.time()))
+    seconds_left = max(0, int(st.session_state[f'next_refresh_{username}'] - time.time()))
     refresh_placeholder.metric("🔄 Next refresh in", f"{seconds_left}s")
     if seconds_left <= 0:
-        st.session_state.next_refresh = time.time() + settings['refresh_interval']
-        st.session_state.refresh_key += 1
+        st.session_state[f'next_refresh_{username}'] = time.time() + settings['refresh_interval']
+        st.session_state[f'refresh_key_{username}'] += 1
         st.rerun()
 
 if __name__ == "__main__":
