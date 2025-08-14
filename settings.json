@@ -1,0 +1,1 @@
+{"refresh_interval": 60, "alert_threshold": 5.0, "portfolio_visible_columns": ["Ticker", "Shares", "Avg Buy Price", "Current Price", "Value", "P/L"], "watchlist_visible_columns": ["Ticker", "Current Price", "Daily Change"], "auto_refresh": true}
